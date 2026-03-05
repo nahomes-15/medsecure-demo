@@ -35,7 +35,7 @@ router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
     return res.status(400).json({ error: "Invalid report type or date range" });
   }
 
-  const safeFormat = /^[a-zA-Z0-9]+$/.test(format) ? format : "pdf";
+  const safeFormat = (format && /^[a-zA-Z0-9]+$/.test(format)) ? format : "pdf";
   const outputFile = `${reportType}_${Date.now()}.${safeFormat}`;
   const outputPath = path.join(REPORTS_DIR, outputFile);
   const url = `http://localhost:3000/reports/render?type=${reportType}&range=${dateRange}`;
