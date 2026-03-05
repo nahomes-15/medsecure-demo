@@ -25,12 +25,16 @@ app.use(
     cookie: { maxAge: 8 * 60 * 60 * 1000 },
   })
 );
-app.use(csrf());
+const csrfMiddleware = csrf();
 
 app.use("/api/auth", authRoutes);
-app.use("/api/patients", patientRoutes);
-app.use("/api/reports", reportRoutes);
-app.use("/api/notes", noteRoutes);
+app.use("/api/patients", csrfMiddleware, patientRoutes);
+app.use("/api/reports", csrfMiddleware, reportRoutes);
+app.use("/api/notes", csrfMiddleware, noteRoutes);
+
+app.get("/api/csrf-token", (req, res) => {
+  res.json({ _csrf: req.sessionID ? req.session._csrf : null });
+});
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", version: "2.4.1", timestamp: new Date().toISOString() });
