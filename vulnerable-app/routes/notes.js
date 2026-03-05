@@ -10,7 +10,7 @@ const notesLimiter = RateLimit({
   max: 100, // max 100 requests per windowMs
 });
 
-router.post("/:patientId", notesLimiter, requireAuth, (req, res) => {
+router.post("/:patientId", requireAuth, notesLimiter, (req, res) => {
   const { content } = req.body;
   const { patientId } = req.params;
 
@@ -32,7 +32,7 @@ router.post("/:patientId", notesLimiter, requireAuth, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, message: "Note added" });
 });
 
-router.get("/:patientId", notesLimiter, requireAuth, (req, res) => {
+router.get("/:patientId", requireAuth, notesLimiter, (req, res) => {
   const { patientId } = req.params;
   const { q } = req.query;
 
