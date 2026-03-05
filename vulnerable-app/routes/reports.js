@@ -1,7 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const { exec } = require("child_process");
+const { execFile } = require("child_process");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
@@ -31,10 +31,16 @@ router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
     return res.status(400).json({ error: "Report type and date range are required" });
   }
 
-  const outputFile = `${reportType}_${Date.now()}.${format || "pdf"}`;
-  const cmd = `wkhtmltopdf --quiet "http://localhost:3000/reports/render?type=${reportType}&range=${dateRange}" ${REPORTS_DIR}/${outputFile}`;
+  if (!/^[a-zA-Z0-9_-]+$/.test(reportType) || !/^[a-zA-Z0-9_-]+$/.test(dateRange)) {
+    return res.status(400).json({ error: "Invalid characters in report type or date range" });
+  }
 
-  exec(cmd, (err, stdout, stderr) => {
+  const safeFormat = /^[a-zA-Z0-9]+$/.test(format) ? format : "pdf";
+  const outputFile = `${reportType}_${Date.now()}.${safeFormat}`;
+  const url = `http://localhost:3000/reports/render?type=${encodeURIComponent(reportType)}&range=${encodeURIComponent(dateRange)}`;
+  const outputPath = path.join(REPORTS_DIR, outputFile);
+
+  execFile("wkhtmltopdf", ["--quiet", url, outputPath], (err, stdout, stderr) => {
     if (err) {
       return res.status(500).json({ error: "Report generation failed" });
     }
