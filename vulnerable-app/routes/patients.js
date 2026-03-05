@@ -1,8 +1,20 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { getConnection } = require("../config/database");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
+
+// Rate limiter: max 100 requests per 15-minute window per IP
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+router.use(limiter);
 
 router.get("/search", requireAuth, (req, res) => {
   const { name, mrn } = req.query;
