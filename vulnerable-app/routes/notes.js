@@ -1,10 +1,16 @@
 const express = require("express");
+const RateLimit = require("express-rate-limit");
 const { getConnection } = require("../config/database");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
-router.post("/:patientId", requireAuth, (req, res) => {
+const notesLimiter = RateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per windowMs
+});
+
+router.post("/:patientId", notesLimiter, requireAuth, (req, res) => {
   const { content } = req.body;
   const { patientId } = req.params;
 
@@ -26,7 +32,7 @@ router.post("/:patientId", requireAuth, (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, message: "Note added" });
 });
 
-router.get("/:patientId", requireAuth, (req, res) => {
+router.get("/:patientId", notesLimiter, requireAuth, (req, res) => {
   const { patientId } = req.params;
   const { q } = req.query;
 
