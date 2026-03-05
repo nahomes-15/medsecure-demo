@@ -6,7 +6,7 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 
-const REPORTS_DIR = path.join(__dirname, "..", "data", "reports");
+const REPORTS_DIR = path.resolve(__dirname, "..", "data", "reports");
 
 router.get("/download", requireAuth, (req, res) => {
   const { filename } = req.query;
@@ -15,7 +15,11 @@ router.get("/download", requireAuth, (req, res) => {
     return res.status(400).json({ error: "Filename is required" });
   }
 
-  const filePath = path.join(REPORTS_DIR, filename);
+  const filePath = path.resolve(REPORTS_DIR, filename);
+
+  if (!filePath.startsWith(REPORTS_DIR + path.sep)) {
+    return res.status(403).json({ error: "Access denied" });
+  }
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "Report not found" });
