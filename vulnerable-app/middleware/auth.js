@@ -1,8 +1,14 @@
-const crypto = require("crypto");
+const bcrypt = require("bcrypt");
 const { getConnection } = require("../config/database");
 
+const BCRYPT_ROUNDS = 12;
+
 function hashPassword(password) {
-  return crypto.createHash("md5").update(password).digest("hex");
+  return bcrypt.hashSync(password, BCRYPT_ROUNDS);
+}
+
+function verifyPassword(password, hash) {
+  return bcrypt.compareSync(password, hash);
 }
 
 function requireAuth(req, res, next) {
@@ -33,4 +39,4 @@ function requireRole(role) {
   };
 }
 
-module.exports = { hashPassword, requireAuth, requireRole };
+module.exports = { hashPassword, verifyPassword, requireAuth, requireRole };
