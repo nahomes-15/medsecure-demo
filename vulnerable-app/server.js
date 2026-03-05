@@ -32,8 +32,8 @@ app.use("/api/patients", csrfMiddleware, patientRoutes);
 app.use("/api/reports", csrfMiddleware, reportRoutes);
 app.use("/api/notes", csrfMiddleware, noteRoutes);
 
-app.get("/api/csrf-token", (req, res) => {
-  res.json({ _csrf: req.sessionID ? req.session._csrf : null });
+app.get("/api/csrf-token", csrfMiddleware, (req, res) => {
+  res.json({ _csrf: req.csrfToken() });
 });
 
 app.get("/api/health", (req, res) => {
