@@ -31,9 +31,15 @@ router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
     return res.status(400).json({ error: "Report type and date range are required" });
   }
 
-  const outputFile = `${reportType}_${Date.now()}.${format || "pdf"}`;
+  const safeReportType = reportType.replace(/[^a-zA-Z0-9_-]/g, "");
+  const safeFormat = (format || "pdf").replace(/[^a-zA-Z0-9]/g, "");
+  const outputFile = `${safeReportType}_${Date.now()}.${safeFormat}`;
   const outputPath = path.join(REPORTS_DIR, outputFile);
-  const url = `http://localhost:3000/reports/render?type=${reportType}&range=${dateRange}`;
+  const resolvedPath = path.resolve(outputPath);
+  if (!resolvedPath.startsWith(path.resolve(REPORTS_DIR) + path.sep)) {
+    return res.status(400).json({ error: "Invalid report parameters" });
+  }
+  const url = `http://localhost:3000/reports/render?type=${encodeURIComponent(reportType)}&range=${encodeURIComponent(dateRange)}`;
 
   execFile("wkhtmltopdf", ["--quiet", url, outputPath], (err, stdout, stderr) => {
     if (err) {
