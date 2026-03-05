@@ -1,6 +1,7 @@
 const express = require("express");
 const { getConnection } = require("../config/database");
-const { verifyPassword } = require("../middleware/auth");
+const crypto = require("crypto");
+const { hashPassword, verifyPassword } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -16,7 +17,24 @@ router.post("/login", (req, res) => {
     .prepare("SELECT id, username, role, password_hash FROM users WHERE username = ?")
     .get(username);
 
-  const user = row && verifyPassword(password, row.password_hash) ? { id: row.id, username: row.username, role: row.role } : null;
+  let user = null;
+  if (row) {
+    const isBcrypt = row.password_hash && row.password_hash.startsWith("$2");
+    if (isBcrypt) {
+      // Modern bcrypt hash
+      if (verifyPassword(password, row.password_hash)) {
+        user = { id: row.id, username: row.username, role: row.role };
+      }
+    } else {
+      // Legacy MD5 hash — verify then transparently upgrade to bcrypt
+      const md5Hash = crypto.createHash("md5").update(password).digest("hex");
+      if (md5Hash === row.password_hash) {
+        const newHash = hashPassword(password);
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, row.id);
+        user = { id: row.id, username: row.username, role: row.role };
+      }
+    }
+  }
 
   if (!user) {
     return res.status(401).json({ error: "Invalid credentials" });
