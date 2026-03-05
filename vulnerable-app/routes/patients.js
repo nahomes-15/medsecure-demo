@@ -14,15 +14,18 @@ router.get("/search", requireAuth, (req, res) => {
   const db = getConnection();
 
   let query = "SELECT id, mrn, first_name, last_name, dob FROM patients WHERE 1=1";
+  const params = [];
   if (name) {
-    query += ` AND (first_name LIKE '%${name}%' OR last_name LIKE '%${name}%')`;
+    query += " AND (first_name LIKE ? OR last_name LIKE ?)";
+    params.push(`%${name}%`, `%${name}%`);
   }
   if (mrn) {
-    query += ` AND mrn = '${mrn}'`;
+    query += " AND mrn = ?";
+    params.push(mrn);
   }
 
   try {
-    const patients = db.prepare(query).all();
+    const patients = db.prepare(query).all(...params);
     res.json({ results: patients, count: patients.length });
   } catch (err) {
     res.status(500).json({ error: "Search failed", detail: err.message });
@@ -45,12 +48,16 @@ router.get("/:id/records", requireAuth, (req, res) => {
   const { type } = req.query;
   const db = getConnection();
 
-  const sql = `SELECT * FROM clinical_notes WHERE patient_id = ${req.params.id}` +
-    (type ? ` AND type = '${type}'` : "") +
-    " ORDER BY created_at DESC";
+  let sql = "SELECT * FROM clinical_notes WHERE patient_id = ?";
+  const params = [req.params.id];
+  if (type) {
+    sql += " AND type = ?";
+    params.push(type);
+  }
+  sql += " ORDER BY created_at DESC";
 
   try {
-    const records = db.prepare(sql).all();
+    const records = db.prepare(sql).all(...params);
     res.json({ records });
   } catch (err) {
     res.status(500).json({ error: "Failed to retrieve records" });
