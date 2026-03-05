@@ -1,10 +1,18 @@
 const express = require("express");
+const RateLimit = require("express-rate-limit");
 const { getConnection } = require("../config/database");
 const { hashPassword } = require("../middleware/auth");
 
 const router = express.Router();
 
-router.post("/login", (req, res) => {
+// Rate limiter for login: max 5 attempts per 15-minute window
+const loginLimiter = RateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // max 5 requests per windowMs
+  message: { error: "Too many login attempts, please try again later" },
+});
+
+router.post("/login", loginLimiter, (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
