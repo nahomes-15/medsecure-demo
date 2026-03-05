@@ -28,12 +28,15 @@ router.post("/login", (req, res) => {
     } else {
       // Legacy MD5 hash — verify then transparently upgrade to bcrypt
       const md5Hash = crypto.createHash("md5").update(password).digest("hex");
-      if (md5Hash === row.password_hash) {
+      if (row.password_hash.length === md5Hash.length && crypto.timingSafeEqual(Buffer.from(md5Hash), Buffer.from(row.password_hash))) {
         const newHash = hashPassword(password);
         db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, row.id);
         user = { id: row.id, username: row.username, role: row.role };
       }
     }
+  } else {
+    // Dummy compare to prevent timing-based user enumeration
+    verifyPassword(password, "$2a$12$000000000000000000000uGsNMCPaLFOG/5cPaJFOTuh0hhLNKG");
   }
 
   if (!user) {
