@@ -33,7 +33,7 @@ app.use("/api/reports", csrfMiddleware, reportRoutes);
 app.use("/api/notes", csrfMiddleware, noteRoutes);
 
 app.get("/api/csrf-token", csrfMiddleware, (req, res) => {
-  res.json({ _csrf: req.csrfToken() });
+  res.json({ _csrf: res.locals._csrf });
 });
 
 app.get("/api/health", (req, res) => {
