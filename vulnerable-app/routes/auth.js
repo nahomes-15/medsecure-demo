@@ -1,6 +1,7 @@
 const express = require("express");
 const { getConnection } = require("../config/database");
-const { verifyPassword } = require("../middleware/auth");
+const crypto = require("crypto");
+const { hashPassword, verifyPassword } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -16,8 +17,18 @@ router.post("/login", (req, res) => {
     .prepare("SELECT id, username, role, password_hash FROM users WHERE username = ?")
     .get(username);
 
-  if (!user || !verifyPassword(password, user.password_hash)) {
+  const bcryptMatch = user && verifyPassword(password, user.password_hash);
+  const md5Match = user && !bcryptMatch &&
+    crypto.createHash("md5").update(password).digest("hex") === user.password_hash;
+
+  if (!user || (!bcryptMatch && !md5Match)) {
     return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  // Transparently migrate legacy MD5 hash to bcrypt
+  if (md5Match) {
+    const newHash = hashPassword(password);
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, user.id);
   }
 
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
