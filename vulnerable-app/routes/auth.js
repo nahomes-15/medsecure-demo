@@ -1,6 +1,6 @@
 const express = require("express");
 const { getConnection } = require("../config/database");
-const { hashPassword } = require("../middleware/auth");
+const { verifyPassword } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -12,10 +12,11 @@ router.post("/login", (req, res) => {
   }
 
   const db = getConnection();
-  const passwordHash = hashPassword(password);
-  const user = db
-    .prepare("SELECT id, username, role FROM users WHERE username = ? AND password_hash = ?")
-    .get(username, passwordHash);
+  const row = db
+    .prepare("SELECT id, username, role, password_hash FROM users WHERE username = ?")
+    .get(username);
+
+  const user = row && verifyPassword(password, row.password_hash) ? { id: row.id, username: row.username, role: row.role } : null;
 
   if (!user) {
     return res.status(401).json({ error: "Invalid credentials" });
