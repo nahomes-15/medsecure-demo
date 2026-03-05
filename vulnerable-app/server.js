@@ -21,7 +21,7 @@ app.use(
     secret: "medsecure-session-key-2024",
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 8 * 60 * 60 * 1000, secure: true, httpOnly: true },
+    cookie: { maxAge: 8 * 60 * 60 * 1000, secure: process.env.NODE_ENV === 'production', httpOnly: true },
   })
 );
 
