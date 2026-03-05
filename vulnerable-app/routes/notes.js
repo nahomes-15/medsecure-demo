@@ -1,4 +1,5 @@
 const express = require("express");
+const escapeHtml = require("escape-html");
 const { getConnection } = require("../config/database");
 const { requireAuth } = require("../middleware/auth");
 
@@ -38,8 +39,8 @@ router.get("/:patientId", requireAuth, (req, res) => {
   if (q) {
     const filtered = notes.filter((n) => n.content.includes(q));
     const html = `<div class="search-results">
-      <h3>Results for: ${q}</h3>
-      <ul>${filtered.map((n) => `<li>${n.content}</li>`).join("")}</ul>
+      <h3>Results for: ${escapeHtml(q)}</h3>
+      <ul>${filtered.map((n) => `<li>${escapeHtml(n.content)}</li>`).join("")}</ul>
     </div>`;
     return res.send(html);
   }
