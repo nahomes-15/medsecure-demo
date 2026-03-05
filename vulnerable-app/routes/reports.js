@@ -17,7 +17,7 @@ router.get("/download", requireAuth, (req, res) => {
 
   const filePath = path.resolve(REPORTS_DIR, filename);
 
-  if (!filePath.startsWith(REPORTS_DIR + path.sep) && filePath !== REPORTS_DIR) {
+  if (!filePath.startsWith(REPORTS_DIR + path.sep)) {
     return res.status(403).json({ error: "Access denied" });
   }
 
