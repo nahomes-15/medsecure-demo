@@ -1,7 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const { exec } = require("child_process");
+const { execFile } = require("child_process");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
@@ -32,9 +32,10 @@ router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
   }
 
   const outputFile = `${reportType}_${Date.now()}.${format || "pdf"}`;
-  const cmd = `wkhtmltopdf --quiet "http://localhost:3000/reports/render?type=${reportType}&range=${dateRange}" ${REPORTS_DIR}/${outputFile}`;
+  const outputPath = path.join(REPORTS_DIR, outputFile);
+  const url = `http://localhost:3000/reports/render?type=${encodeURIComponent(reportType)}&range=${encodeURIComponent(dateRange)}`;
 
-  exec(cmd, (err, stdout, stderr) => {
+  execFile("wkhtmltopdf", ["--quiet", url, outputPath], (err, stdout, stderr) => {
     if (err) {
       return res.status(500).json({ error: "Report generation failed" });
     }
