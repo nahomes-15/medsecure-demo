@@ -1,8 +1,17 @@
 const express = require("express");
+const RateLimit = require("express-rate-limit");
 const { getConnection } = require("../config/database");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
+
+// Rate limiter: max 100 requests per 15-minute window per IP
+const limiter = RateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+});
+
+router.use(limiter);
 
 router.get("/search", requireAuth, (req, res) => {
   const { name, mrn } = req.query;
