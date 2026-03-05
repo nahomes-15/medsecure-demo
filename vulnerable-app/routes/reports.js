@@ -38,7 +38,7 @@ router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
   if (!/^[a-zA-Z0-9_\-:\/]+$/.test(dateRange)) {
     return res.status(400).json({ error: "Invalid date range" });
   }
-  const safeFormat = /^[a-zA-Z0-9]+$/.test(format) ? format : "pdf";
+  const safeFormat = (typeof format === "string" && /^[a-zA-Z0-9]+$/.test(format)) ? format : "pdf";
 
   const outputFile = `${reportType}_${Date.now()}.${safeFormat}`;
   const url = `http://localhost:3000/reports/render?type=${encodeURIComponent(reportType)}&range=${encodeURIComponent(dateRange)}`;
