@@ -1,0 +1,316 @@
+{
+  "sessions": [
+    {
+      "session_id": "fa52e92923c04c458895ce16b905fbdd",
+      "title": "Fix Uncontrolled command line in reports.js (CWE-78)",
+      "status": "suspended",
+      "status_detail": "inactivity",
+      "acus_consumed": 0.465,
+      "created_at": 1772686918,
+      "pull_requests": [
+        {
+          "pr_url": "https://github.com/nahomes-15/medsecure-demo/pull/1",
+          "pr_state": "open"
+        }
+      ],
+      "structured_output": {
+        "cwe": "CWE-78",
+        "file": "vulnerable-app/routes/reports.js",
+        "status": "completed",
+        "summary": "Replaced child_process.exec with execFile and passed arguments as an array to prevent shell injection in the /generate endpoint. User inputs used in the URL are encoded with encodeURIComponent and output path is built with path.join.",
+        "finding_id": "js/command-line-injection-vulnerable-app-routes-reports-js-L37"
+      },
+      "rule_id": "js/command-line-injection",
+      "level": "error",
+      "security_severity": "9.8",
+      "cwe_ids": [
+        "CWE-78",
+        "CWE-88"
+      ],
+      "file": "vulnerable-app/routes/reports.js",
+      "lines": [
+        37
+      ],
+      "short_description": "Uncontrolled command line"
+    },
+    {
+      "session_id": "99d98cb278204c8d82a755fc7aa5f025",
+      "title": "Fix 2x Database query built from user-controlled sources in patients.js (CWE-89)",
+      "status": "suspended",
+      "status_detail": "inactivity",
+      "acus_consumed": 0.462,
+      "created_at": 1772686919,
+      "pull_requests": [
+        {
+          "pr_url": "https://github.com/nahomes-15/medsecure-demo/pull/2",
+          "pr_state": "open"
+        }
+      ],
+      "structured_output": {
+        "cwe": "CWE-89",
+        "file": "vulnerable-app/routes/patients.js",
+        "status": "completed",
+        "summary": "Replaced string-interpolated SQL with parameterized queries in patients.js for the /search route (name, mrn) and the /:id/records route (patient_id, type). Committed changes and opened PR #2.",
+        "finding_id": "js/sql-injection-patients-js"
+      },
+      "rule_id": "js/sql-injection",
+      "level": "error",
+      "security_severity": "8.8",
+      "cwe_ids": [
+        "CWE-89",
+        "CWE-90",
+        "CWE-943"
+      ],
+      "file": "vulnerable-app/routes/patients.js",
+      "lines": [
+        25,
+        53
+      ],
+      "short_description": "Database query built from user-controlled sources"
+    },
+    {
+      "session_id": "8b6f4ca3b1834ebea51a587a1deade9d",
+      "title": "Fix 2x Uncontrolled data used in path expression in reports.js (CWE-22)",
+      "status": "suspended",
+      "status_detail": "inactivity",
+      "acus_consumed": 0.453,
+      "created_at": 1772686919,
+      "pull_requests": [
+        {
+          "pr_url": "https://github.com/nahomes-15/medsecure-demo/pull/3",
+          "pr_state": "open"
+        }
+      ],
+      "structured_output": {
+        "cwe": "CWE-22",
+        "file": "vulnerable-app/routes/reports.js",
+        "status": "completed",
+        "summary": "Replaced path.join with path.resolve(REPORTS_DIR, filename) and added a containment check to ensure the resolved path is within REPORTS_DIR before proceeding to exists check and res.download. Opened PR #3.",
+        "finding_id": "js/path-injection-reports-js"
+      },
+      "rule_id": "js/path-injection",
+      "level": "error",
+      "security_severity": "7.5",
+      "cwe_ids": [
+        "CWE-22",
+        "CWE-23",
+        "CWE-36",
+        "CWE-73",
+        "CWE-99"
+      ],
+      "file": "vulnerable-app/routes/reports.js",
+      "lines": [
+        20,
+        24
+      ],
+      "short_description": "Uncontrolled data used in path expression"
+    },
+    {
+      "session_id": "6a6160efa59a43c4868a520dd8f232b4",
+      "title": "Fix Missing CSRF middleware in server.js (CWE-352)",
+      "status": "running",
+      "status_detail": "waiting_for_user",
+      "acus_consumed": 0.472,
+      "created_at": 1772686919,
+      "pull_requests": [
+        {
+          "pr_url": "https://github.com/nahomes-15/medsecure-demo/pull/4",
+          "pr_state": "open"
+        }
+      ],
+      "structured_output": {
+        "cwe": "CWE-352",
+        "file": "vulnerable-app/server.js",
+        "status": "completed",
+        "summary": "Added lusca dependency to package.json, required lusca in server.js, and inserted app.use(lusca.csrf()) after the session middleware. PR opened at #4.",
+        "finding_id": "js/missing-token-validation-vulnerable-app-server-js-L18"
+      },
+      "rule_id": "js/missing-token-validation",
+      "level": "error",
+      "security_severity": "8.8",
+      "cwe_ids": [
+        "CWE-352"
+      ],
+      "file": "vulnerable-app/server.js",
+      "lines": [
+        18
+      ],
+      "short_description": "Missing CSRF middleware"
+    },
+    {
+      "session_id": "9c798c04c7f143cb8a4113838b37a8cc",
+      "title": "Fix Reflected cross-site scripting in notes.js (CWE-79)",
+      "status": "running",
+      "status_detail": "waiting_for_user",
+      "acus_consumed": 0.518,
+      "created_at": 1772686924,
+      "pull_requests": [
+        {
+          "pr_url": "https://github.com/nahomes-15/medsecure-demo/pull/5",
+          "pr_state": "open"
+        }
+      ],
+      "structured_output": {
+        "cwe": "CWE-79",
+        "file": "vulnerable-app/routes/notes.js",
+        "status": "completed",
+        "summary": "Added escape-html dependency and updated notes.js to escape the user-controlled query parameter q and note contents before embedding in HTML to prevent reflected XSS. Opened PR #5.",
+        "finding_id": "js/reflected-xss-vulnerable-app-routes-notes-js-L44"
+      },
+      "rule_id": "js/reflected-xss",
+      "level": "error",
+      "security_severity": "6.1",
+      "cwe_ids": [
+        "CWE-79",
+        "CWE-116"
+      ],
+      "file": "vulnerable-app/routes/notes.js",
+      "lines": [
+        44
+      ],
+      "short_description": "Reflected cross-site scripting"
+    }
+  ],
+  "queued": [
+    {
+      "rule_id": "js/shell-command-injection-from-environment",
+      "level": "warning",
+      "security_severity": "6.3",
+      "cwe_ids": [
+        "CWE-78",
+        "CWE-88"
+      ],
+      "file": "vulnerable-app/routes/reports.js",
+      "lines": [
+        37
+      ],
+      "short_description": "Shell command built from environment values",
+      "status": "queued"
+    },
+    {
+      "rule_id": "js/insufficient-password-hash",
+      "level": "warning",
+      "security_severity": "7.5",
+      "cwe_ids": [
+        "CWE-916",
+        "CWE-328"
+      ],
+      "file": "vulnerable-app/middleware/auth.js",
+      "lines": [
+        5
+      ],
+      "short_description": "Use of password hash with insufficient computational effort",
+      "status": "queued"
+    },
+    {
+      "rule_id": "js/missing-rate-limiting",
+      "level": "warning",
+      "security_severity": "7.5",
+      "cwe_ids": [
+        "CWE-770",
+        "CWE-307",
+        "CWE-400"
+      ],
+      "file": "vulnerable-app/routes/auth.js",
+      "lines": [
+        7
+      ],
+      "short_description": "Missing rate limiting",
+      "status": "queued"
+    },
+    {
+      "rule_id": "js/missing-rate-limiting",
+      "level": "warning",
+      "security_severity": "7.5",
+      "cwe_ids": [
+        "CWE-770",
+        "CWE-307",
+        "CWE-400"
+      ],
+      "file": "vulnerable-app/routes/notes.js",
+      "lines": [
+        7,
+        29
+      ],
+      "short_description": "Missing rate limiting",
+      "status": "queued"
+    },
+    {
+      "rule_id": "js/missing-rate-limiting",
+      "level": "warning",
+      "security_severity": "7.5",
+      "cwe_ids": [
+        "CWE-770",
+        "CWE-307",
+        "CWE-400"
+      ],
+      "file": "vulnerable-app/routes/patients.js",
+      "lines": [
+        7,
+        32,
+        44
+      ],
+      "short_description": "Missing rate limiting",
+      "status": "queued"
+    },
+    {
+      "rule_id": "js/missing-rate-limiting",
+      "level": "warning",
+      "security_severity": "7.5",
+      "cwe_ids": [
+        "CWE-770",
+        "CWE-307",
+        "CWE-400"
+      ],
+      "file": "vulnerable-app/routes/reports.js",
+      "lines": [
+        11,
+        27,
+        45
+      ],
+      "short_description": "Missing rate limiting",
+      "status": "queued"
+    },
+    {
+      "rule_id": "js/clear-text-cookie",
+      "level": "warning",
+      "security_severity": "5.0",
+      "cwe_ids": [
+        "CWE-614",
+        "CWE-311",
+        "CWE-312",
+        "CWE-319"
+      ],
+      "file": "vulnerable-app/server.js",
+      "lines": [
+        20
+      ],
+      "short_description": "Clear text transmission of sensitive cookie",
+      "status": "queued"
+    },
+    {
+      "rule_id": "js/sensitive-get-query",
+      "level": "warning",
+      "security_severity": "6.5",
+      "cwe_ids": [
+        "CWE-598"
+      ],
+      "file": "vulnerable-app/routes/notes.js",
+      "lines": [
+        30
+      ],
+      "short_description": "Sensitive data read from GET request",
+      "status": "queued"
+    }
+  ],
+  "summary": {
+    "total_findings": 28,
+    "total_groups": 13,
+    "sessions_dispatched": 5,
+    "sessions_completed": 5,
+    "prs_opened": 5,
+    "queued_remaining": 8,
+    "total_acus": 2.37,
+    "timestamp": "2026-03-05T05:16:07Z"
+  }
+}

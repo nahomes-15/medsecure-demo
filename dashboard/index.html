@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedSecure — Security Remediation Pipeline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; color: #fff; font-family: "DM Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; font-size: 16px; }
+    ::selection { background: rgba(255,255,255,0.15); }
+    a { color: inherit; text-decoration: none; }
+    a:hover { opacity: 0.7; }
+    button { font-family: inherit; cursor: pointer; }
+    .mono { font-family: "DM Mono", "SF Mono", Menlo, monospace; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 800px; } }
+    .diff-add { color: #00c853; background: rgba(0,200,83,0.08); }
+    .diff-del { color: #ff4d4d; background: rgba(255,77,77,0.08); }
+    .diff-hunk { color: #4d94ff; }
+    .diff-line { padding: 1px 12px; font-size: 13px; line-height: 1.7; white-space: pre; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+
+    const INITIAL_DATA = INJECT_DATA_HERE;
+
+    function useSessionData(initialData, pollInterval) {
+      const [data, setData] = React.useState(initialData);
+      const [lastPoll, setLastPoll] = React.useState(null);
+      const [polling, setPolling] = React.useState(false);
+      const [error, setError] = React.useState(null);
+
+      React.useEffect(() => {
+        if (window.location.protocol === "file:") return;
+        let active = true;
+        const poll = async () => {
+          try {
+            setPolling(true);
+            const resp = await fetch("/api/sessions");
+            if (!resp.ok) throw new Error(`${resp.status}`);
+            const fresh = await resp.json();
+            if (active) { setData(fresh); setLastPoll(new Date()); setError(null); }
+          } catch (e) { if (active) setError(e.message); }
+          finally { if (active) setPolling(false); }
+        };
+        poll();
+        const id = setInterval(poll, pollInterval);
+        return () => { active = false; clearInterval(id); };
+      }, [pollInterval]);
+
+      return { data, lastPoll, polling, error };
+    }
+
+    function usePrDiff(prUrl) {
+      const [diff, setDiff] = React.useState(null);
+      const [loading, setLoading] = React.useState(false);
+      React.useEffect(() => {
+        if (!prUrl) return;
+        const prNum = prUrl.split("/").pop();
+        setLoading(true);
+        fetch(`/api/pr/${prNum}`)
+          .then(r => r.json())
+          .then(d => setDiff(d))
+          .catch(() => setDiff(null))
+          .finally(() => setLoading(false));
+      }, [prUrl]);
+      return { diff, loading };
+    }
+
+    const C = {
+      bg: "#000", surface: "#0a0a0a", surfaceHover: "#0f0f0f",
+      border: "#1a1a1a", borderLight: "#252525",
+      text: "#fff", textSecondary: "#888", textMuted: "#555",
+      red: "#ff4d4d", amber: "#e5a100", green: "#00c853", blue: "#4d94ff", purple: "#a78bfa",
+    };
+
+    const severityColor = { error: C.red, warning: C.amber, note: C.blue };
+
+    const statusLabels = {
+      running:   "Running",
+      suspended: "Suspended",
+      exit:      "Exited",
+      error:     "Error",
+    };
+    const detailLabels = {
+      working:          "Working",
+      waiting_for_user: "Awaiting review",
+      inactivity:       "Idle",
+      finished:         "Finished",
+    };
+
+    const GRID = "100px 1fr 180px 120px 48px";
+
+    function Pill({ text, color }) {
+      return <span className="mono" style={{
+        fontSize: 13, fontWeight: 500, color,
+        border: `1px solid ${color}33`, padding: "4px 12px",
+        borderRadius: 3, letterSpacing: "0.03em", textTransform: "uppercase",
+      }}>{text}</span>;
+    }
+
+    function Dot({ color, size = 7, pulse = false }) {
+      return <span style={{
+        width: size, height: size, borderRadius: "50%",
+        background: color, display: "inline-block", flexShrink: 0,
+        boxShadow: pulse ? `0 0 8px ${color}` : "none",
+        animation: pulse ? "pulse 2s ease-in-out infinite" : "none",
+      }} />;
+    }
+
+    function Metric({ value, label, sub }) {
+      return (
+        <div style={{ minWidth: 140 }}>
+          <div className="mono" style={{ fontSize: 52, fontWeight: 500, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</div>
+          <div style={{ fontSize: 15, color: C.textSecondary, marginTop: 10 }}>{label}</div>
+          {sub && <div className="mono" style={{ fontSize: 13, color: C.textMuted, marginTop: 5 }}>{sub}</div>}
+        </div>
+      );
+    }
+
+    function ProgressBar({ completed, total }) {
+      const pct = total > 0 ? (completed / total) * 100 : 0;
+      return (
+        <div style={{ display: "flex", height: 4, background: C.border, borderRadius: 2, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, background: C.green, transition: "width 0.8s ease" }} />
+        </div>
+      );
+    }
+
+    function PollIndicator({ lastPoll, polling, error, isLive }) {
+      if (!isLive) return <div className="mono" style={{ fontSize: 13, color: C.textMuted }}>Static mode</div>;
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Dot color={error ? C.red : polling ? C.blue : C.green} size={6} pulse={polling} />
+          <span className="mono" style={{ fontSize: 13, color: C.textMuted }}>
+            {error ? `Error` : polling ? "Polling..." : lastPoll ? `${lastPoll.toLocaleTimeString()}` : "..."}
+          </span>
+        </div>
+      );
+    }
+
+    function DiffViewer({ prUrl }) {
+      const { diff, loading } = usePrDiff(prUrl);
+      if (loading) return <div className="mono" style={{ fontSize: 13, color: C.textMuted, padding: 16 }}>Loading diff...</div>;
+      if (!diff || !diff.files?.length) return null;
+      return (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+            Code Changes
+          </div>
+          {diff.files.map((f, i) => (
+            <div key={i} style={{ marginBottom: 12, border: `1px solid ${C.border}`, borderRadius: 6, overflow: "hidden" }}>
+              <div style={{
+                padding: "10px 16px", background: "#050505",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                borderBottom: `1px solid ${C.border}`,
+              }}>
+                <span className="mono" style={{ fontSize: 13, color: C.textSecondary }}>{f.filename}</span>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  <span style={{ color: C.green }}>+{f.additions}</span>
+                  {" "}<span style={{ color: C.red }}>-{f.deletions}</span>
+                </span>
+              </div>
+              {f.patch && !f.patch.startsWith("(") && (
+                <div className="mono" style={{ overflow: "auto", maxHeight: 400 }}>
+                  {f.patch.split("\n").map((line, j) => {
+                    let cls = "diff-line";
+                    if (line.startsWith("+")) cls += " diff-add";
+                    else if (line.startsWith("-")) cls += " diff-del";
+                    else if (line.startsWith("@@")) cls += " diff-hunk";
+                    return <div key={j} className={cls}>{line}</div>;
+                  })}
+                </div>
+              )}
+              {f.patch && f.patch.startsWith("(") && (
+                <div className="mono" style={{ padding: 16, fontSize: 13, color: C.textMuted }}>{f.patch}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function SessionTimeline({ session }) {
+      const so = session.structured_output || {};
+      const isActive = session.status === "running" && session.status_detail === "working";
+      const isCompleted = so.status === "completed";
+      const hasPR = session.pull_requests?.length > 0;
+      const created = new Date(session.created_at * 1000);
+      const updated = new Date(session.updated_at * 1000);
+      const elapsed = Math.round((session.updated_at - session.created_at) / 60);
+
+      const steps = [
+        { label: "Session created", done: true, time: created.toLocaleTimeString() },
+        { label: "Devin working", done: true, active: isActive },
+        { label: "PR opened", done: hasPR, pr: session.pull_requests?.[0] },
+        { label: "Remediation complete", done: isCompleted },
+      ];
+
+      return (
+        <div style={{ display: "flex", gap: 0 }}>
+          {steps.map((step, i) => {
+            const color = step.done ? C.green : step.active ? C.blue : C.textMuted;
+            const isLast = i === steps.length - 1;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 0, flex: 1 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 80 }}>
+                  <div style={{
+                    width: 10, height: 10, borderRadius: "50%",
+                    background: step.done ? color : "transparent",
+                    border: `2px solid ${color}`,
+                    boxShadow: step.active ? `0 0 8px ${color}` : "none",
+                    animation: step.active ? "pulse 2s ease-in-out infinite" : "none",
+                  }} />
+                  <div style={{ fontSize: 12, color: step.done ? C.textSecondary : C.textMuted, textAlign: "center" }}>
+                    {step.label}
+                  </div>
+                  {step.time && <div className="mono" style={{ fontSize: 11, color: C.textMuted }}>{step.time}</div>}
+                </div>
+                {!isLast && (
+                  <div style={{
+                    flex: 1, height: 2, background: step.done ? C.green : C.border,
+                    margin: "0 8px", marginBottom: 20,
+                  }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function SessionControls({ session, onAction }) {
+      const [busy, setBusy] = React.useState(null);
+      const canControl = session.status === "running" || session.status === "new" || session.status === "claimed";
+
+      const doAction = async (action) => {
+        if (busy) return;
+        const label = action === "terminate" ? "permanently terminate" : "put to sleep";
+        if (!confirm(`Are you sure you want to ${label} this session?`)) return;
+        setBusy(action);
+        try {
+          const resp = await fetch(`/api/session/${session.session_id}/${action}`, { method: "POST" });
+          const data = await resp.json();
+          if (!data.ok) alert(data.error || `${action} failed`);
+          else if (onAction) onAction(action);
+        } catch (e) { alert(`Failed: ${e.message}`); }
+        finally { setBusy(null); }
+      };
+
+      const btnStyle = (color) => ({
+        background: "transparent", border: `1px solid ${color}33`,
+        color, borderRadius: 6, padding: "8px 16px",
+        fontSize: 13, fontWeight: 500, cursor: busy ? "wait" : "pointer",
+        opacity: busy ? 0.5 : 1, fontFamily: "inherit",
+      });
+
+      return (
+        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          {canControl && (
+            <button onClick={() => doAction("archive")} disabled={!!busy} style={btnStyle(C.amber)}>
+              {busy === "archive" ? "Sleeping..." : "Put to Sleep"}
+            </button>
+          )}
+          <button onClick={() => doAction("terminate")} disabled={!!busy} style={btnStyle(C.red)}>
+            {busy === "terminate" ? "Terminating..." : "Terminate"}
+          </button>
+        </div>
+      );
+    }
+
+    function SessionCard({ session, isExpanded, onToggle }) {
+      const so = session.structured_output || {};
+      const pr = session.pull_requests?.[0];
+      const sc = severityColor[session.level] || C.textSecondary;
+      const isActive = session.status === "running" && session.status_detail === "working";
+      const isCompleted = so.status === "completed";
+
+      const statusColor = isCompleted ? C.green : isActive ? C.blue : C.textMuted;
+      const statusText = isCompleted ? "Remediated"
+        : isActive ? "Working"
+        : detailLabels[session.status_detail] || session.status_detail || session.status;
+
+      return (
+        <div style={{
+          border: `1px solid ${isExpanded ? C.borderLight : C.border}`,
+          borderRadius: 8, background: isExpanded ? C.surface : "transparent",
+          transition: "all 0.15s",
+        }}>
+          <div onClick={onToggle} style={{
+            display: "grid", gridTemplateColumns: GRID,
+            alignItems: "center", gap: 20, padding: "20px 28px", cursor: "pointer",
+          }}>
+            <div><Pill text={session.level} color={sc} /></div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 500 }}>{session.short_description}</div>
+              <div className="mono" style={{ fontSize: 14, color: C.textMuted, marginTop: 3 }}>
+                {(session.file || "").replace("vulnerable-app/", "")}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Dot color={statusColor} size={7} pulse={isActive} />
+              <span style={{ fontSize: 15, color: statusColor }}>{statusText}</span>
+            </div>
+            <div>
+              {pr ? (
+                <a href={pr.pr_url} target="_blank" rel="noopener noreferrer" className="mono"
+                  style={{ fontSize: 14, color: C.green, border: `1px solid ${C.green}33`, padding: "6px 14px", borderRadius: 4, display: "inline-block" }}
+                  onClick={e => e.stopPropagation()}>
+                  PR #{pr.pr_url.split("/").pop()}
+                </a>
+              ) : isActive ? (
+                <span className="mono" style={{ fontSize: 13, color: C.textMuted }}>pending</span>
+              ) : null}
+            </div>
+            <div style={{ textAlign: "right", color: C.textMuted, fontSize: 22 }}>
+              {isExpanded ? "\u2212" : "+"}
+            </div>
+          </div>
+
+          {isExpanded && (
+            <div style={{ borderTop: `1px solid ${C.border}`, padding: "28px 28px 32px", animation: "fadeIn 0.15s ease" }}>
+
+              {/* Timeline */}
+              <div style={{ marginBottom: 28, padding: "20px 16px", background: "#050505", border: `1px solid ${C.border}`, borderRadius: 6 }}>
+                <SessionTimeline session={session} />
+              </div>
+
+              {/* Summary + metadata side by side */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 32, marginBottom: 20 }}>
+                <div>
+                  {so.summary ? (
+                    <>
+                      <div style={{ fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+                        What Devin Did
+                      </div>
+                      <div style={{ fontSize: 15, color: C.textSecondary, lineHeight: 1.7 }}>{so.summary}</div>
+                    </>
+                  ) : isActive ? (
+                    <>
+                      <div style={{ fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+                        Status
+                      </div>
+                      <div style={{ fontSize: 15, color: C.blue, display: "flex", alignItems: "center", gap: 8 }}>
+                        <Dot color={C.blue} pulse size={8} />
+                        Devin is analyzing the code and implementing a fix...
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 15, color: C.textMuted }}>Waiting for session to start...</div>
+                  )}
+                </div>
+
+                {/* Right panel: metadata */}
+                <div style={{ borderLeft: `1px solid ${C.border}`, paddingLeft: 32 }}>
+                  <div style={{ display: "grid", gap: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 3 }}>ACUs</div>
+                      <span className="mono" style={{ fontSize: 20, fontWeight: 500, color: C.text }}>
+                        {session.acus_consumed ? session.acus_consumed.toFixed(3) : "0.000"}
+                      </span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 3 }}>CWEs</div>
+                      <span className="mono" style={{ fontSize: 14, color: C.textSecondary }}>
+                        {session.cwe_ids?.join(", ") || "\u2014"}
+                      </span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 3 }}>Lifecycle</div>
+                      <span className="mono" style={{ fontSize: 14, color: C.textSecondary }}>
+                        {statusLabels[session.status] || session.status} / {detailLabels[session.status_detail] || session.status_detail}
+                      </span>
+                    </div>
+                    {pr && (
+                      <div>
+                        <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 3 }}>PR State</div>
+                        <span className="mono" style={{ fontSize: 14, color: pr.pr_state === "open" ? C.blue : C.green }}>
+                          {pr.pr_state}
+                        </span>
+                      </div>
+                    )}
+                    <a href={`https://app.devin.ai/sessions/${session.session_id}`} target="_blank" rel="noopener noreferrer"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 8,
+                        fontSize: 14, color: C.blue, marginTop: 4,
+                        padding: "8px 16px", border: `1px solid ${C.blue}33`,
+                        borderRadius: 6, width: "fit-content",
+                      }}>
+                      Open in Devin &rarr;
+                    </a>
+                    <SessionControls session={session} />
+                  </div>
+                </div>
+              </div>
+
+              {/* PR Diff */}
+              {pr && <DiffViewer prUrl={pr.pr_url} />}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function DispatchPanel({ dispatch, isLive }) {
+      const [dispatching, setDispatching] = React.useState(false);
+
+      const handleDispatch = async () => {
+        if (!isLive || dispatching) return;
+        setDispatching(true);
+        try {
+          const resp = await fetch("/api/dispatch", { method: "POST" });
+          const data = await resp.json();
+          if (!data.ok) alert(data.error || "Dispatch failed");
+        } catch (e) { alert("Failed to reach server"); }
+      };
+
+      const isRunning = dispatch?.running;
+      const log = dispatch?.log || [];
+
+      React.useEffect(() => {
+        if (!isRunning && dispatching) setDispatching(false);
+      }, [isRunning]);
+
+      const logColor = { info: C.textSecondary, warning: C.amber, error: C.red };
+
+      return (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 24 }}>
+            <button onClick={handleDispatch} disabled={!isLive || isRunning}
+              style={{
+                background: isRunning ? C.border : C.text, color: isRunning ? C.textMuted : C.bg,
+                border: "none", borderRadius: 6, padding: "12px 28px",
+                fontSize: 15, fontWeight: 600,
+                cursor: isRunning ? "not-allowed" : "pointer",
+                opacity: !isLive ? 0.3 : 1,
+              }}>
+              {isRunning ? "Dispatching..." : "Dispatch All Findings"}
+            </button>
+            {isRunning && (
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Dot color={C.blue} size={7} pulse />
+                <span className="mono" style={{ fontSize: 14, color: C.blue }}>
+                  {dispatch.dispatched}/{dispatch.total} sent
+                  {dispatch.failed > 0 && <span style={{ color: C.red }}> ({dispatch.failed} failed)</span>}
+                </span>
+              </span>
+            )}
+            {!isRunning && dispatch?.dispatched > 0 && (
+              <span className="mono" style={{ fontSize: 14, color: C.green }}>
+                {dispatch.dispatched} dispatched, {dispatch.failed} failed
+              </span>
+            )}
+          </div>
+          {log.length > 0 && (
+            <div style={{
+              background: "#050505", border: `1px solid ${C.border}`,
+              borderRadius: 6, padding: "16px 20px", marginBottom: 24,
+              maxHeight: 280, overflowY: "auto",
+            }}>
+              {log.map((e, i) => (
+                <div key={i} className="mono" style={{ fontSize: 13, lineHeight: 1.8, color: logColor[e.level] || C.textSecondary }}>
+                  <span style={{ color: C.textMuted }}>{e.ts}</span> {e.msg}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const isLive = window.location.protocol !== "file:";
+      const { data, lastPoll, polling, error } = useSessionData(INITIAL_DATA, 5000);
+      const [expanded, setExpanded] = React.useState(null);
+
+      if (!data) return <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", color: C.textMuted }}>Loading...</div>;
+
+      const { sessions, summary: s, dispatch } = data;
+      const toggle = (id) => setExpanded(expanded === id ? null : id);
+      const ts = new Date(s.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const hasActive = sessions.some(x => x.status === "running" && x.status_detail === "working");
+
+      return (
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "72px 64px 96px" }}>
+
+          {/* Header */}
+          <div style={{ marginBottom: 64 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: 13, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
+                  Security Remediation
+                </div>
+                <h1 style={{ fontSize: 40, fontWeight: 600, letterSpacing: "-0.02em", marginBottom: 10 }}>
+                  MedSecure Pipeline
+                </h1>
+                <div style={{ fontSize: 17, color: C.textSecondary }}>
+                  {ts} &middot; {s.total_findings} findings &middot; {s.total_groups} groups &middot; {s.total_acus} ACUs
+                </div>
+              </div>
+              <PollIndicator lastPoll={lastPoll} polling={polling} error={error} isLive={isLive} />
+            </div>
+          </div>
+
+          {/* Metrics */}
+          <div style={{ display: "flex", gap: 64, marginBottom: 64, flexWrap: "wrap" }}>
+            <Metric value={s.sessions_dispatched} label="Sessions dispatched" sub={`of ${s.total_groups} groups`} />
+            <Metric value={s.prs_opened} label="PRs opened" />
+            <Metric value={s.sessions_completed} label="Remediated" />
+            <Metric
+              value={`${s.total_groups > 0 ? Math.round((s.sessions_completed / s.total_groups) * 100) : 0}%`}
+              label="Remediation rate"
+              sub={`${s.sessions_completed}/${s.total_groups}`}
+            />
+          </div>
+
+          {/* Progress */}
+          <div style={{ marginBottom: 64 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, fontSize: 15 }}>
+              <span style={{ color: C.textSecondary }}>
+                Pipeline progress
+                {hasActive && <span style={{ color: C.blue, marginLeft: 12 }}>(sessions active)</span>}
+              </span>
+              <span style={{ color: C.textMuted }}>
+                <span style={{ color: C.green }}>{s.sessions_completed} done</span>
+                {s.queued_remaining > 0 && <span> &middot; <span style={{ color: C.amber }}>{s.queued_remaining} queued</span></span>}
+              </span>
+            </div>
+            <ProgressBar completed={s.sessions_completed} total={s.total_groups} />
+          </div>
+
+          <div style={{ borderTop: `1px solid ${C.border}`, marginBottom: 40 }} />
+
+          {/* Dispatch panel */}
+          {s.queued_remaining > 0 && <DispatchPanel dispatch={dispatch} isLive={isLive} />}
+
+          {/* Sessions header */}
+          {sessions.length > 0 && (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+                Devin Sessions
+                <span className="mono" style={{ fontSize: 13, color: C.textMuted }}>{sessions.length}</span>
+                {hasActive && <Dot color={C.blue} pulse size={7} />}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 20, padding: "10px 28px",
+                color: C.textMuted, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                <div>Severity</div><div>Vulnerability</div><div>Status</div><div>PR</div><div />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {sessions.map(s => (
+                  <SessionCard key={s.session_id} session={s}
+                    isExpanded={expanded === s.session_id}
+                    onToggle={() => toggle(s.session_id)} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {sessions.length === 0 && !dispatch?.running && (
+            <div style={{ textAlign: "center", padding: "64px 0", color: C.textMuted, fontSize: 16 }}>
+              No active sessions. Hit "Dispatch All Findings" to start remediation.
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ marginTop: 64, paddingTop: 28, borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", fontSize: 14, color: C.textMuted }}>
+            <span>Powered by Devin &middot; CodeQL</span>
+            <span>&copy; 2026 MedSecure</span>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
