@@ -1,0 +1,13 @@
+{
+  "pipeline_run": {
+    "timestamp": "2026-03-05T05:15:38.923454+00:00",
+    "total_findings": 0,
+    "total_sessions": 0,
+    "completed": 0,
+    "needs_human_review": 0,
+    "failed": 0,
+    "in_progress": 0,
+    "remediation_rate": 0
+  },
+  "findings": []
+}

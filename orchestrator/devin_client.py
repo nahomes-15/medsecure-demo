@@ -17,7 +17,7 @@ import logging
 import os
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 
@@ -61,7 +61,7 @@ class DevinClient:
         self,
         api_key: str | None = None,
         org_id: str | None = None,
-    ):
+    ) -> None:
         self.api_key = api_key or os.environ.get("DEVIN_API_KEY", "")
         self.org_id = org_id or os.environ.get("DEVIN_ORG_ID", "")
         if not self.api_key:
@@ -137,9 +137,9 @@ class DevinClient:
 class MockDevinClient:
     """Simulates Devin API v3 with realistic delays and outcomes."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._sessions: dict[str, dict] = {}
-        self._counter = 0
+        self._counter: int = 0
 
     async def create_session(
         self, prompt: str, tags: list[str], title: str, repo: str

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "CodeQL",
+          "semanticVersion": "2.24.2",
+          "rules": []
+        },
+        "extensions": [
+          {
+            "name": "codeql/javascript-queries",
+            "rules": [
+              {
+                "id": "js/sql-injection",
+                "shortDescription": { "text": "SQL injection" },
+                "fullDescription": { "text": "Building a SQL query from user-controlled sources is vulnerable to insertion of malicious SQL code." },
+                "help": { "text": "Use parameterized queries or prepared statements." },
+                "defaultConfiguration": { "level": "error" },
+                "properties": {
+                  "tags": ["security", "external/cwe/cwe-089"],
+                  "precision": "high",
+                  "security-severity": "8.8",
+                  "problem.severity": "error"
+                }
+              },
+              {
+                "id": "js/xss",
+                "shortDescription": { "text": "Cross-site scripting" },
+                "fullDescription": { "text": "Inserting untrusted data into HTML without escaping allows XSS attacks." },
+                "help": { "text": "Sanitize or escape all user input before inserting into HTML." },
+                "defaultConfiguration": { "level": "warning" },
+                "properties": {
+                  "tags": ["security", "external/cwe/cwe-079"],
+                  "precision": "high",
+                  "security-severity": "6.1",
+                  "problem.severity": "warning"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "results": [
+        {
+          "ruleId": "js/sql-injection",
+          "message": { "text": "This query depends on a user-provided value." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "vulnerable-app/routes/patients.js" },
+                "region": { "startLine": 12, "startColumn": 5, "endLine": 12, "endColumn": 42 }
+              }
+            }
+          ],
+          "rule": { "index": 0, "toolComponent": { "index": 0 } }
+        },
+        {
+          "ruleId": "js/xss",
+          "message": { "text": "Cross-site scripting vulnerability due to unescaped user input." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "vulnerable-app/routes/notes.js" },
+                "region": { "startLine": 25, "startColumn": 10, "endLine": 25, "endColumn": 55 }
+              }
+            }
+          ],
+          "rule": { "index": 1, "toolComponent": { "index": 0 } }
+        }
+      ]
+    }
+  ]
+}

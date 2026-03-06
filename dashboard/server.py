@@ -19,12 +19,21 @@ import os
 import re
 import subprocess
 import sys
-import time
 import threading
+import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+
+# Load .env from project root if present
+_env_path = Path(__file__).parent.parent / ".env"
+if _env_path.exists():
+    for line in _env_path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
 
 ORG_ID = os.environ.get("DEVIN_ORG_ID", "")
 API_KEY = os.environ.get("DEVIN_API_KEY", "")
@@ -33,6 +42,22 @@ BASE_URL = f"https://api.devin.ai/v3/organizations/{ORG_ID}/sessions"
 DASHBOARD_DIR = Path(__file__).parent
 ORCHESTRATOR_DIR = DASHBOARD_DIR.parent / "orchestrator"
 SARIF_PATH = DASHBOARD_DIR.parent / "sarif" / "javascript.sarif"
+
+# Parse SARIF once at startup to get accurate counts
+def _count_sarif() -> dict[str, int]:
+    try:
+        sys.path.insert(0, str(ORCHESTRATOR_DIR))
+        from sarif_parser import group_findings, parse_sarif
+        findings = parse_sarif(SARIF_PATH)
+        groups = group_findings(findings)
+        return {"findings": len(findings), "groups": len(groups)}
+    except Exception:
+        return {"findings": 0, "groups": 0}
+
+_sarif_counts = _count_sarif()
+
+# Timestamp: only show sessions created after server start
+_server_start = int(time.time()) - 5
 
 # Session cache
 _cache = {"data": None, "ts": 0}
@@ -48,7 +73,7 @@ _dispatch = {
 }
 
 
-def fetch_sessions():
+def fetch_sessions() -> dict:
     """Fetch all sessions from Devin API with caching."""
     now = time.time()
     if _cache["data"] and (now - _cache["ts"]) < CACHE_TTL:
@@ -69,7 +94,9 @@ def fetch_sessions():
         return _cache["data"] or {"items": []}
 
 
-def create_session_with_retry(prompt, tags, title, repo, max_retries=6):
+def create_session_with_retry(
+    prompt: str, tags: list[str], title: str, repo: str, max_retries: int = 6,
+) -> dict:
     """Create a Devin session with exponential backoff on 429."""
     body = json.dumps({
         "prompt": prompt,
@@ -117,7 +144,7 @@ def create_session_with_retry(prompt, tags, title, repo, max_retries=6):
     raise Exception(f"Rate limited after {max_retries} retries")
 
 
-def _dispatch_log(level, msg):
+def _dispatch_log(level: str, msg: str) -> None:
     """Thread-safe dispatch log append."""
     _dispatch["log"].append({
         "ts": time.strftime("%H:%M:%S"),
@@ -131,7 +158,7 @@ MAX_CONCURRENT = 5
 SLOT_POLL_INTERVAL = 15  # seconds between checking for free slots
 
 
-def _count_active_sessions():
+def _count_active_sessions() -> int:
     """Count non-terminal sessions from the Devin API (ignores cache)."""
     req = Request(BASE_URL, headers={
         "Authorization": f"Bearer {API_KEY}",
@@ -148,7 +175,7 @@ def _count_active_sessions():
         return MAX_CONCURRENT  # assume full if we can't check
 
 
-def _wait_for_slot():
+def _wait_for_slot() -> None:
     """Block until there's a free concurrent slot."""
     while True:
         active = _count_active_sessions()
@@ -161,7 +188,7 @@ def _wait_for_slot():
         time.sleep(SLOT_POLL_INTERVAL)
 
 
-def run_dispatch(repo="medsecure-demo"):
+def run_dispatch(repo: str = "medsecure-demo") -> None:
     """Background thread: dispatch findings with concurrency-aware batching.
 
     Devin enforces a 5-session concurrent limit. This dispatcher:
@@ -175,13 +202,12 @@ def run_dispatch(repo="medsecure-demo"):
     _dispatch["log"] = []
     _dispatch["dispatched"] = 0
     _dispatch["failed"] = 0
-    _dispatch["batch_start"] = int(time.time()) - 5  # filter old sessions
 
     try:
         # Load orchestrator modules
         sys.path.insert(0, str(ORCHESTRATOR_DIR))
-        from sarif_parser import parse_sarif, group_findings
         from prompt_builder import build_prompt, build_tags, build_title
+        from sarif_parser import group_findings, parse_sarif
 
         findings = parse_sarif(SARIF_PATH)
         groups = group_findings(findings)
@@ -198,7 +224,7 @@ def run_dispatch(repo="medsecure-demo"):
             return
 
         stagger = 2.0  # seconds between dispatches within a batch
-        for i, (g, prompt, tags, title) in enumerate(to_dispatch):
+        for i, (_g, prompt, tags, title) in enumerate(to_dispatch):
             # Before each dispatch, ensure we have a free slot
             if i > 0:
                 if i < MAX_CONCURRENT:
@@ -232,7 +258,7 @@ def run_dispatch(repo="medsecure-demo"):
         _dispatch["running"] = False
 
 
-def fetch_pr_diff(pr_number):
+def fetch_pr_diff(pr_number: int | str) -> dict:
     """Fetch PR file diffs from GitHub via gh CLI."""
     try:
         result = subprocess.run(
@@ -267,7 +293,7 @@ def fetch_pr_diff(pr_number):
         return {"error": str(e), "files": []}
 
 
-def terminate_session(session_id):
+def terminate_session(session_id: str) -> dict:
     """Permanently terminate a Devin session (DELETE)."""
     url = f"{BASE_URL}/{session_id}"
     req = Request(url, headers={
@@ -280,10 +306,10 @@ def terminate_session(session_id):
             return json.loads(resp.read())
     except HTTPError as e:
         body = e.read().decode() if e.fp else ""
-        raise Exception(f"HTTP {e.code}: {body}")
+        raise Exception(f"HTTP {e.code}: {body}") from e
 
 
-def archive_session(session_id):
+def archive_session(session_id: str) -> dict:
     """Archive (sleep) a Devin session (POST /archive)."""
     url = f"{BASE_URL}/{session_id}/archive"
     req = Request(url, data=b"", headers={
@@ -296,17 +322,15 @@ def archive_session(session_id):
             return json.loads(resp.read())
     except HTTPError as e:
         body = e.read().decode() if e.fp else ""
-        raise Exception(f"HTTP {e.code}: {body}")
+        raise Exception(f"HTTP {e.code}: {body}") from e
 
 
-def build_dashboard_data():
+def build_dashboard_data() -> dict:
     """Transform Devin API response into dashboard-shaped data."""
     api = fetch_sessions()
-    # Filter to sessions from the current batch (ignore old ones)
-    # Default: hide all pre-existing sessions until a fresh dispatch
     all_items = api.get("items", [])
-    cutoff = _dispatch.get("batch_start", int(time.time()))
-    items = [s for s in all_items if s.get("created_at", 0) >= cutoff]
+    # Only show sessions created after server start (clean slate each run)
+    items = [s for s in all_items if s.get("created_at", 0) >= _server_start]
 
     sessions = []
     for s in items:
@@ -352,12 +376,12 @@ def build_dashboard_data():
     return {
         "sessions": sessions,
         "summary": {
-            "total_findings": 28,
-            "total_groups": 13,
+            "total_findings": _sarif_counts["findings"],
+            "total_groups": _sarif_counts["groups"],
             "sessions_dispatched": len(sessions),
             "sessions_completed": completed,
             "prs_opened": prs,
-            "queued_remaining": 13 - len(sessions),
+            "queued_remaining": max(0, _sarif_counts["groups"] - len(sessions)),
             "total_acus": total_acus,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         },
@@ -372,10 +396,10 @@ def build_dashboard_data():
 
 
 class DashboardHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, directory=str(DASHBOARD_DIR), **kwargs)
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         # PR diff endpoint: /api/pr/3
         pr_match = re.match(r"^/api/pr/(\d+)$", self.path)
 
@@ -400,7 +424,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         # Session control: /api/session/<id>/terminate or /api/session/<id>/archive
         session_match = re.match(r"^/api/session/([a-f0-9]+)/(terminate|archive)$", self.path)
 
@@ -427,7 +451,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def _json_response(self, data, status=200):
+    def _json_response(self, data: dict, status: int = 200) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -436,7 +460,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format, *args):
+    def log_message(self, format: str, *args: object) -> None:
         try:
             msg = str(args[0]) if args else ""
             if "/api/" not in msg:
@@ -445,7 +469,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             pass
 
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=3333)
     args = p.parse_args()

@@ -2,8 +2,13 @@
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+
+
+class SarifParseError(Exception):
+    """Raised when a SARIF file cannot be parsed."""
+
 
 SKIP_PATTERNS = ["test/", "__tests__/", "node_modules/", "vendor/", ".min.js"]
 
@@ -103,17 +108,35 @@ def _should_skip(uri: str) -> bool:
 
 
 def parse_sarif(sarif_path: str | Path) -> list[Finding]:
-    """Parse a SARIF file and return enriched findings."""
-    with open(sarif_path) as f:
-        data = json.load(f)
+    """Parse a SARIF file and return enriched findings.
 
-    run = data["runs"][0]
+    Raises:
+        SarifParseError: If the file is missing, not valid JSON, or has an
+            unexpected SARIF structure.
+    """
+    path = Path(sarif_path)
+    if not path.exists():
+        raise SarifParseError(f"SARIF file not found: {path}")
+
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SarifParseError(f"Invalid JSON in {path}: {exc}") from exc
+
+    runs = data.get("runs")
+    if not runs:
+        raise SarifParseError(f"No 'runs' array in SARIF file: {path}")
+
+    run = runs[0]
     rule_index = _build_rule_index(run)
-    findings = []
+    findings: list[Finding] = []
 
-    for result in run["results"]:
-        loc = result["locations"][0]["physicalLocation"]
-        uri = loc["artifactLocation"]["uri"]
+    for result in run.get("results", []):
+        try:
+            loc = result["locations"][0]["physicalLocation"]
+            uri = loc["artifactLocation"]["uri"]
+        except (KeyError, IndexError):
+            continue  # skip malformed results
 
         if _should_skip(uri):
             continue
@@ -128,7 +151,7 @@ def parse_sarif(sarif_path: str | Path) -> list[Finding]:
         region = loc.get("region", {})
 
         findings.append(Finding(
-            rule_id=result["ruleId"],
+            rule_id=result.get("ruleId", "unknown"),
             file=uri,
             start_line=region.get("startLine", 0),
             end_line=region.get("endLine"),

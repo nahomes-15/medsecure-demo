@@ -4,9 +4,9 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from devin_client import DevinClient, MockDevinClient, TERMINAL_STATES
+from devin_client import TERMINAL_STATES, DevinClient, MockDevinClient
 from sarif_parser import FindingGroup
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ async def poll_sessions(
 
 def generate_report(sessions: list[TrackedSession]) -> dict:
     """Build the pipeline-results.json structure."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     findings_out = []
 
     for s in sessions:

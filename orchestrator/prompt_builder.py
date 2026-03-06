@@ -5,7 +5,7 @@ The structured output format is enforced via JSON Schema in the API request
 in the prompt — just tell Devin to update structured output as it works.
 """
 
-from sarif_parser import Finding, FindingGroup
+from sarif_parser import FindingGroup
 
 SINGLE_TEMPLATE = """\
 You are fixing a security vulnerability found by CodeQL static analysis.
@@ -165,7 +165,7 @@ def build_tags(group: FindingGroup) -> list[str]:
 
 
 if __name__ == "__main__":
-    from sarif_parser import parse_sarif, group_findings
+    from sarif_parser import group_findings, parse_sarif
 
     findings = parse_sarif("../sarif/javascript.sarif")
     groups = group_findings(findings)

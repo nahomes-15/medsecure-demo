@@ -14,10 +14,10 @@ import sys
 import time
 from pathlib import Path
 
-from sarif_parser import parse_sarif, group_findings
-from prompt_builder import build_prompt, build_tags, build_title
 from devin_client import get_client
-from tracker import TrackedSession, poll_sessions, generate_report, print_summary
+from prompt_builder import build_prompt, build_tags, build_title
+from sarif_parser import SarifParseError, group_findings, parse_sarif
+from tracker import TrackedSession, generate_report, poll_sessions, print_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,13 +43,14 @@ def parse_args() -> argparse.Namespace:
 
 async def run_pipeline(args: argparse.Namespace) -> None:
     sarif_path = Path(args.sarif)
-    if not sarif_path.exists():
-        logger.error(f"SARIF file not found: {sarif_path}")
-        sys.exit(1)
 
-    # Step 1: Parse
+    # Step 1: Parse (with friendly error handling)
     logger.info(f"Parsing SARIF: {sarif_path}")
-    findings = parse_sarif(sarif_path)
+    try:
+        findings = parse_sarif(sarif_path)
+    except SarifParseError as e:
+        logger.error(str(e))
+        sys.exit(1)
     logger.info(f"  Found {len(findings)} findings")
 
     # Step 2: Filter & group
@@ -107,7 +108,10 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             ))
             logger.info(f"    [{i+1}/{len(dispatches)}] Dispatched -> {result.session_id}")
         except Exception as e:
-            logger.error(f"    [{i+1}/{len(dispatches)}] Failed {g.rule_id}: {e}")
+            logger.error(
+                f"    [{i+1}/{len(dispatches)}] Dispatch failed for "
+                f"{g.rule_id} in {g.file}: {e} — continuing with remaining groups"
+            )
 
     # Step 5: Poll & track
     logger.info(f"Polling {len(sessions)} sessions...")
@@ -124,7 +128,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     print_summary(report)
 
 
-def main():
+def main() -> None:
     args = parse_args()
     asyncio.run(run_pipeline(args))
 

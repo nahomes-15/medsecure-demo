@@ -1,0 +1,73 @@
+name: "Auto-Remediate"
+
+on:
+  # Automatically trigger when CodeQL analysis completes
+  workflow_run:
+    workflows: ["CodeQL"]
+    types: [completed]
+
+  # Manual trigger for ad-hoc runs or re-dispatching
+  workflow_dispatch:
+    inputs:
+      sarif_path:
+        description: "Path to SARIF file (default: sarif/javascript.sarif)"
+        required: false
+        default: "sarif/javascript.sarif"
+      mode:
+        description: "Pipeline mode"
+        required: false
+        default: "live"
+        type: choice
+        options:
+          - live
+          - mock
+          - dry-run
+
+jobs:
+  remediate:
+    name: Dispatch to Devin
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install httpx
+
+      - name: Download SARIF artifact
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: codeql-sarif
+          path: sarif-results
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run remediation pipeline
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SARIF_FILE="${{ inputs.sarif_path }}"
+            MODE="${{ inputs.mode }}"
+          else
+            SARIF_FILE=$(ls sarif-results/*.sarif | head -1)
+            MODE="live"
+          fi
+          echo "SARIF: $SARIF_FILE | Mode: $MODE"
+          cd orchestrator
+          python pipeline.py --sarif "../$SARIF_FILE" --mode "$MODE" --repo medsecure-demo
+
+      - name: Upload pipeline results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-results
+          path: orchestrator/pipeline-results.json
