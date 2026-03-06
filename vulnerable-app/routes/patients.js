@@ -1,10 +1,32 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { getConnection } = require("../config/database");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
-router.get("/search", requireAuth, (req, res) => {
+// Rate limiter for patient search endpoint
+const searchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per windowMs
+  message: { error: "Too many search requests, please try again later" },
+});
+
+// Rate limiter for patient detail lookups
+const patientLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per windowMs
+  message: { error: "Too many requests, please try again later" },
+});
+
+// Rate limiter for patient records endpoint
+const recordsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per windowMs
+  message: { error: "Too many record requests, please try again later" },
+});
+
+router.get("/search", searchLimiter, requireAuth, (req, res) => {
   const { name, mrn } = req.query;
 
   if (!name && !mrn) {
@@ -29,7 +51,7 @@ router.get("/search", requireAuth, (req, res) => {
   }
 });
 
-router.get("/:id", requireAuth, (req, res) => {
+router.get("/:id", patientLimiter, requireAuth, (req, res) => {
   const db = getConnection();
   const patient = db
     .prepare("SELECT id, mrn, first_name, last_name, dob FROM patients WHERE id = ?")
@@ -41,7 +63,7 @@ router.get("/:id", requireAuth, (req, res) => {
   res.json(patient);
 });
 
-router.get("/:id/records", requireAuth, (req, res) => {
+router.get("/:id/records", recordsLimiter, requireAuth, (req, res) => {
   const { type } = req.query;
   const db = getConnection();
 
