@@ -33,7 +33,12 @@ router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
 
   const outputFile = `${reportType}_${Date.now()}.${format || "pdf"}`;
   const outputPath = path.join(REPORTS_DIR, outputFile);
-  const url = `http://localhost:3000/reports/render?type=${reportType}&range=${dateRange}`;
+
+  if (!outputPath.startsWith(REPORTS_DIR + path.sep)) {
+    return res.status(400).json({ error: "Invalid report parameters" });
+  }
+
+  const url = `http://localhost:3000/reports/render?type=${encodeURIComponent(reportType)}&range=${encodeURIComponent(dateRange)}`;
 
   execFile("wkhtmltopdf", ["--quiet", url, outputPath], (err, stdout, stderr) => {
     if (err) {
