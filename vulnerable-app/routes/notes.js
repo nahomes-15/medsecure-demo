@@ -28,23 +28,30 @@ router.post("/:patientId", requireAuth, (req, res) => {
 
 router.get("/:patientId", requireAuth, (req, res) => {
   const { patientId } = req.params;
-  const { q } = req.query;
 
   const db = getConnection();
   const notes = db
     .prepare("SELECT id, content, author_id, created_at FROM clinical_notes WHERE patient_id = ?")
     .all(patientId);
 
-  if (q) {
-    const filtered = notes.filter((n) => n.content.includes(q));
-    const html = `<div class="search-results">
-      <h3>Results for: ${q}</h3>
-      <ul>${filtered.map((n) => `<li>${n.content}</li>`).join("")}</ul>
-    </div>`;
-    return res.send(html);
+  res.json({ notes });
+});
+
+router.post("/:patientId/search", requireAuth, (req, res) => {
+  const { patientId } = req.params;
+  const { q } = req.body;
+
+  if (!q) {
+    return res.status(400).json({ error: "Search query is required" });
   }
 
-  res.json({ notes });
+  const db = getConnection();
+  const notes = db
+    .prepare("SELECT id, content, author_id, created_at FROM clinical_notes WHERE patient_id = ?")
+    .all(patientId);
+
+  const filtered = notes.filter((n) => n.content.includes(q));
+  res.json({ results: filtered });
 });
 
 module.exports = router;
