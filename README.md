@@ -4,7 +4,7 @@
 
 Built for a scenario where a healthcare company's security team is drowning in CodeQL findings that engineering never gets to — they're not sprint work, so they pile up until an auditor flags it. This pipeline takes the CodeQL SARIF output, groups related findings, dispatches them to Devin in parallel, and gives the security team a live dashboard so they can actually see things getting fixed. 28 findings → 13 Devin sessions → PRs in the review queue, no engineer had to touch it.
 
-> [Watch the demo video →](#)
+> [Watch the demo video →](https://www.loom.com/share/650cfac2150d415c931a0a1f3cd1c8a6)
 
 ---
 
