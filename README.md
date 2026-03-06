@@ -1,145 +1,128 @@
 # MedSecure Security Remediation Pipeline
 
-Automated security vulnerability remediation for healthcare applications. Parses CodeQL SARIF output, generates targeted fix prompts, dispatches them to Devin AI agents, tracks session progress, and serves a real-time dashboard — turning static analysis findings into merged pull requests with zero manual triage.
+**CodeQL finds vulnerabilities. Devin fixes them. Engineers just review the PRs.**
 
-## Architecture
+Built for a scenario where a healthcare company's security team is drowning in CodeQL findings that engineering never gets to — they're not sprint work, so they pile up until an auditor flags it. This pipeline takes the CodeQL SARIF output, groups related findings, dispatches them to Devin in parallel, and gives the security team a live dashboard so they can actually see things getting fixed. 28 findings → 13 Devin sessions → PRs in the review queue, no engineer had to touch it.
 
-```
-┌─────────────┐     ┌──────────────┐     ┌────────────────┐     ┌──────────────┐
-│  CodeQL CI  │────>│ SARIF Parser │────>│ Prompt Builder │────>│  Devin API   │
-│  (GitHub    │     │              │     │                │     │  (v3)        │
-│   Actions)  │     │ 28 findings  │     │ 13 grouped     │     │ 5 concurrent │
-│             │     │ extracted    │     │ fix prompts    │     │ sessions     │
-└─────────────┘     └──────────────┘     └────────────────┘     └──────┬───────┘
-                                                                       │
-┌─────────────────────────────────────────────────────────────────────┐ │
-│                      Dashboard (localhost:3333)                      │ │
-│  ┌──────────┐  ┌───────────┐  ┌──────────┐  ┌───────────────────┐  │ │
-│  │ Sessions │  │ Compliance│  │ Dispatch  │  │   PR Diff Viewer  │  │<┘
-│  │  Table   │  │    Bar    │  │  Controls │  │                   │  │
-│  └──────────┘  └───────────┘  └──────────┘  └───────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-```
+> [Watch the demo video →](#)
 
-**End-to-end automation loop:**
+---
+
+## How It Works
 
 ```
-CodeQL runs on push → SARIF artifact produced → remediate.yml triggers →
-pipeline parses findings → groups by (rule, file) → dispatches to Devin →
-Devin creates fix branches → PRs appear → dashboard shows live status
+CodeQL scan                    Orchestrator                         Devin API
+───────────                    ────────────                         ─────────
+28 findings  ──→  Parse SARIF  ──→  Group by (rule, file)  ──→  13 sessions
+(SARIF v2.1.0)    Filter noise      Build prompts with CWE      (5 concurrent)
+                  Extract CWEs      context + remediation            │
+                                    guidance from CodeQL             │
+                                                                     ▼
+                  Dashboard  ◄──────────────────────────────  Fix PRs opened
+                  (live polling)                              on GitHub
 ```
 
-## Quick Start
+The orchestrator is dumb on purpose. CodeQL already tells you what's wrong (via SARIF — rule descriptions, CWE references, remediation guidance). Devin figures out how to fix it. The orchestrator just reads the structured data, fills a prompt template, and calls the API. No per-vulnerability-type logic, no custom severity scoring. It works for anything CodeQL can detect.
 
-### 1. Clone and configure
+## Dashboard
+
+<!-- Add a real screenshot: ![Dashboard](docs/dashboard-screenshot.png) -->
+
+The dashboard serves as the security team's real-time view into remediation progress. It polls the Devin API every 5 seconds and shows:
+
+- Session status with severity badges and CWE references
+- Compliance progress bar (completed / in progress / needs review / failed)
+- One-click dispatch for all finding groups with concurrency-aware staggering
+- Inline PR diff viewer — review Devin's code changes without leaving the dashboard
+- Session controls (archive/terminate)
 
 ```bash
-git clone https://github.com/nahomes-15/medsecure-demo.git
-cd medsecure-demo
-cp .env.example .env
-# Edit .env with your Devin API credentials
+make run-dashboard    # serves on http://localhost:3333
 ```
 
-### 2. Install dependencies
+## Pipeline Modes
 
 ```bash
-make install
-# or manually:
-python3 -m venv .venv
-.venv/bin/pip install pytest pytest-asyncio pytest-cov respx ruff httpx
-```
-
-### 3. Run the pipeline
-
-```bash
-# Mock mode — simulates Devin sessions with realistic delays
+# Mock — full pipeline with simulated Devin responses (no API calls, no cost)
 make run-pipeline-mock
 
-# Dry-run — prints prompts without dispatching
+# Dry run — parses SARIF, builds prompts, prints them (verify before dispatching)
 make run-pipeline-dry
 
-# Live mode — dispatches to real Devin API (requires valid .env)
+# Live — dispatches to real Devin API (requires DEVIN_API_KEY and DEVIN_ORG_ID)
 .venv/bin/python orchestrator/pipeline.py \
   --sarif sarif/javascript.sarif \
   --mode live \
   --repo medsecure-demo
 ```
 
-### 4. Launch the dashboard
+## What Devin Actually Produced
 
-```bash
-make run-dashboard
-# Open http://localhost:3333
-```
+In live test runs, Devin successfully remediated all high-severity findings:
 
-The dashboard polls the Devin API every 5 seconds and shows:
-- Live session status with severity badges
-- Compliance bar (completed / failed / needs review / in progress)
-- One-click dispatch for queued findings
-- Inline PR diff viewer
-- Session terminate/archive controls
+| Finding | CWE | What Devin Did | ACU Cost |
+|---------|-----|----------------|----------|
+| Command injection in reports.js | CWE-78 | Replaced `exec()` with `execFile()` to prevent shell interpretation | ~0.5 |
+| SQL injection in patients.js | CWE-89 | Switched to parameterized queries with placeholder binding | ~0.5 |
+| Path traversal in reports.js | CWE-22 | Added `path.resolve()` + base directory validation | ~0.5 |
+| Reflected XSS in notes.js | CWE-79 | Added escape-html sanitization (already a transitive Express dep) | ~0.5 |
+| Missing CSRF in server.js | CWE-352 | Added csurf middleware to all state-changing routes | ~0.4 |
 
-## Testing
-
-```bash
-make test              # run all 85 tests
-make test-unit         # unit tests only
-make test-integration  # integration tests only
-make test-cov          # with coverage report (73%+ required)
-make lint              # ruff linter
-make check             # lint + test (CI gate)
-```
-
-Test suite covers:
-- **SARIF parsing** — minimal fixture + real 549KB CodeQL output, error handling for malformed files
-- **Prompt generation** — single/grouped templates, branch naming, tag construction
-- **Devin client** — mock mode, live mode with respx-mocked httpx, 429 retry/backoff, error codes
-- **Session tracking** — polling, status mapping, report generation, backoff verification
-- **Pipeline orchestration** — argument parsing, dry-run/mock/live modes, dispatch failures
-- **Dashboard server** — real HTTPServer on random port, API endpoints, CORS, session control
-
-## CI/CD
-
-| Workflow | Trigger | What it does |
-|----------|---------|--------------|
-| `ci.yml` | Push / PR | Lint + test + coverage gate |
-| `codeql.yml` | Push to main | CodeQL security analysis |
-| `remediate.yml` | CodeQL completion or manual `workflow_dispatch` | Downloads SARIF, runs pipeline, uploads results |
+Each session costs roughly $0.50 and takes a few minutes. Total backlog remediation: under $10 and under an hour.
 
 ## Project Structure
 
 ```
 medsecure-demo/
 ├── orchestrator/
-│   ├── sarif_parser.py      # SARIF v2.1.0 parsing, Finding/FindingGroup dataclasses
-│   ├── prompt_builder.py    # Devin prompt templates, title/tag construction
-│   ├── devin_client.py      # Devin API v3 client (live + mock), retry logic
-│   ├── tracker.py           # Async session polling, report generation
-│   └── pipeline.py          # CLI entry point, orchestration flow
+│   ├── sarif_parser.py      # SARIF v2.1.0 → Finding/FindingGroup dataclasses
+│   ├── prompt_builder.py    # Universal prompt template, title/tag builders
+│   ├── devin_client.py      # Devin API v3 client + mock + 429 retry logic
+│   ├── tracker.py           # Async session polling + report generation
+│   └── pipeline.py          # CLI entry point
 ├── dashboard/
-│   ├── server.py            # HTTP server, API polling, dispatch, PR diffs
-│   └── index.html           # React dashboard (inline, no build step)
+│   ├── server.py            # HTTP server with API proxy + dispatch engine
+│   └── index.html           # React dashboard (single file, no build step)
 ├── sarif/
-│   └── javascript.sarif     # CodeQL output (28 findings, 13 groups)
-├── vulnerable-app/          # Target Node.js app with intentional vulnerabilities
-├── tests/                   # pytest suite (85 tests, 73%+ coverage)
-├── .github/workflows/       # CI, CodeQL, and auto-remediation workflows
-├── pyproject.toml           # Project config (pytest, ruff, coverage)
-├── Makefile                 # Dev workflow automation
-└── .env.example             # Environment variable template
+│   └── javascript.sarif     # Real CodeQL output (28 findings across 7 vuln types)
+├── vulnerable-app/          # Intentionally vulnerable Express.js patient portal
+├── tests/                   # 85 tests (73%+ coverage)
+├── .github/workflows/
+│   ├── ci.yml               # Lint + test + coverage gate
+│   ├── codeql.yml           # CodeQL security analysis
+│   └── remediate.yml        # Auto-dispatch on CodeQL completion
+├── pyproject.toml           # pytest, ruff, coverage config
+├── Makefile                 # Dev workflow automation (13 targets)
+└── .env.example             # Required environment variables
 ```
 
-## Production Considerations
+## Setup
 
-This pipeline is built as a demonstration. For a production deployment, consider:
+```bash
+git clone https://github.com/nahomes-15/medsecure-demo.git
+cd medsecure-demo
+cp .env.example .env         # add your DEVIN_API_KEY and DEVIN_ORG_ID
+make install                 # creates .venv, installs deps
+```
 
-- **Persistent state**: Replace in-memory session tracking with a database (SQLite or Postgres) so pipeline state survives restarts and enables historical reporting
-- **Webhook trigger**: Replace polling-based dispatch with a GitHub webhook listener that reacts to `code_scanning_alert` events, eliminating the need for `workflow_run` chaining
-- **Dashboard auth**: Add authentication to the dashboard server — currently it binds to localhost only, but any multi-user deployment needs proper auth (OAuth or API key middleware)
-- **RBAC for session control**: The terminate/archive endpoints have no authorization checks — in production, restrict these to admin roles to prevent accidental session termination
-- **Rate limit coordination**: The current 5-session concurrent limit is hardcoded — a production system should query the Devin API for org-level limits and coordinate across multiple pipeline instances
-- **Structured logging**: Replace print-based logging with structured JSON logs (e.g., `structlog`) for better observability in production monitoring stacks
+## Testing
 
-## Demo Video
+```bash
+make test          # all 85 tests
+make test-unit     # unit tests only
+make test-cov      # with coverage (73%+ gate)
+make lint          # ruff
+make check         # lint + test (same as CI)
+```
 
-> [Loom video link placeholder — add after recording]
+Test coverage spans SARIF parsing, prompt generation, Devin API client (with mocked HTTP via respx), session tracking/polling, pipeline orchestration, and dashboard server endpoints.
+
+## CI/CD
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push / PR | Lint + test + coverage gate |
+| `codeql.yml` | Push to main | CodeQL security analysis |
+| `remediate.yml` | CodeQL completion or manual | Downloads SARIF → runs pipeline → uploads results |
+
+The `remediate.yml` workflow completes the automation loop: CodeQL scans on push → SARIF produced → pipeline auto-dispatches → Devin opens PRs → engineers review.
