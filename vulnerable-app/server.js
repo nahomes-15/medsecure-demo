@@ -2,6 +2,7 @@ const express = require("express");
 const session = require("express-session");
 const cookieParser = require("cookie-parser");
 const morgan = require("morgan");
+const { csrf } = require("lusca");
 const { initializeSchema } = require("./config/database");
 
 const authRoutes = require("./routes/auth");
@@ -24,8 +25,8 @@ app.use(
     cookie: { maxAge: 8 * 60 * 60 * 1000 },
   })
 );
-
 app.use("/api/auth", authRoutes);
+app.use(csrf());
 app.use("/api/patients", patientRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/notes", noteRoutes);
