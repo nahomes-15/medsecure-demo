@@ -25,9 +25,8 @@ app.use(
     cookie: { maxAge: 8 * 60 * 60 * 1000 },
   })
 );
-app.use(csrf());
-
 app.use("/api/auth", authRoutes);
+app.use(csrf());
 app.use("/api/patients", patientRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/notes", noteRoutes);
