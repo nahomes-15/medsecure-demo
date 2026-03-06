@@ -2,13 +2,29 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
+const RateLimit = require("express-rate-limit");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 
 const REPORTS_DIR = path.join(__dirname, "..", "data", "reports");
 
-router.get("/download", requireAuth, (req, res) => {
+const downloadLimiter = RateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per windowMs
+});
+
+const generateLimiter = RateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // max 50 requests per windowMs
+});
+
+const listLimiter = RateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max 100 requests per windowMs
+});
+
+router.get("/download", downloadLimiter, requireAuth, (req, res) => {
   const { filename } = req.query;
 
   if (!filename) {
@@ -24,7 +40,7 @@ router.get("/download", requireAuth, (req, res) => {
   res.download(filePath);
 });
 
-router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
+router.post("/generate", generateLimiter, requireAuth, requireRole("admin"), (req, res) => {
   const { reportType, dateRange, format } = req.body;
 
   if (!reportType || !dateRange) {
@@ -42,7 +58,7 @@ router.post("/generate", requireAuth, requireRole("admin"), (req, res) => {
   });
 });
 
-router.get("/list", requireAuth, (req, res) => {
+router.get("/list", listLimiter, requireAuth, (req, res) => {
   try {
     const files = fs.readdirSync(REPORTS_DIR).filter((f) => f.endsWith(".pdf"));
     const reports = files.map((f) => ({
