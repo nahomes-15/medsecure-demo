@@ -45,6 +45,7 @@ You are fixing a security vulnerability found by CodeQL static analysis.
 
 Update your structured output as you work — set finding_id to "{finding_id}", file to "{file}", and cwe to "{primary_cwe}". Set status to "completed" when the PR is opened, or "needs_human_review" if you encounter something you can't confidently fix.\
 """
+# Schema enforcement lives in the API request, not these templates
 
 GROUPED_TEMPLATE = """\
 You are fixing multiple instances of the same security vulnerability found by CodeQL static analysis.
@@ -88,6 +89,7 @@ Update your structured output as you work — set finding_id to "{group_id}", fi
 
 
 def _safe_filename(filepath: str) -> str:
+    # dots/slashes break git branch names
     return filepath.split("/")[-1].replace(".", "-")
 
 
@@ -97,6 +99,7 @@ def _primary_cwe(cwe_ids: list[str]) -> str:
 
 def build_prompt(group: FindingGroup) -> str:
     """Build a Devin prompt for a finding group."""
+    # rule-level metadata is identical across a group; grab from first
     f0 = group.findings[0]
     filename = group.file.split("/")[-1]
     safe_fn = _safe_filename(group.file)
@@ -143,7 +146,7 @@ def build_prompt(group: FindingGroup) -> str:
         safe_filename=safe_fn,
         filename=filename,
         primary_cwe=primary,
-        group_id=f"{f0.rule_id}-{safe_fn}",
+        group_id=f"{f0.rule_id}-{safe_fn}",  # synthetic ID — no single finding applies
     )
 
 

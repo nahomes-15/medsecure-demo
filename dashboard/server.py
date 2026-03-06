@@ -57,13 +57,13 @@ def _count_sarif() -> dict[str, int]:
 _sarif_counts = _count_sarif()
 
 # Timestamp: only show sessions created after server start
-_server_start = int(time.time()) - 5
+_server_start = int(time.time()) - 5  # 5s fudge for clock skew with Devin API
 
 # Session cache
 _cache = {"data": None, "ts": 0}
-CACHE_TTL = 8
+CACHE_TTL = 8  # Devin polls at ~10s; stay under to feel live
 
-# Dispatch state (shared across threads)
+# Dispatch state — GIL protects dict key writes here
 _dispatch = {
     "running": False,
     "log": [],            # list of {ts, msg, level}
@@ -138,7 +138,7 @@ def create_session_with_retry(
                     f"waiting {wait:.0f}s..."
                 )
                 time.sleep(wait)
-                backoff = min(backoff * 2, 60)
+                backoff = min(backoff * 2, 60)  # cap at 60s per Devin guidance
                 continue
             raise
     raise Exception(f"Rate limited after {max_retries} retries")
@@ -172,7 +172,7 @@ def _count_active_sessions() -> int:
                   and not s.get("is_archived")]
         return len(active)
     except Exception:
-        return MAX_CONCURRENT  # assume full if we can't check
+        return MAX_CONCURRENT  # fail closed: assume full if API unreachable
 
 
 def _wait_for_slot() -> None:
@@ -228,11 +228,11 @@ def run_dispatch(repo: str = "medsecure-demo") -> None:
             # Before each dispatch, ensure we have a free slot
             if i > 0:
                 if i < MAX_CONCURRENT:
-                    # First batch: just stagger
+                    # First batch fits in free slots; just avoid burst
                     _dispatch_log("info", f"Staggering {stagger:.0f}s...")
                     time.sleep(stagger)
                 else:
-                    # Past first batch: wait for a slot to open
+                    # Slots full — block until one session finishes
                     _dispatch_log("info", f"Waiting for a free slot before dispatching [{i+1}/{len(to_dispatch)}]...")
                     _wait_for_slot()
                     time.sleep(stagger)
@@ -243,7 +243,7 @@ def run_dispatch(repo: str = "medsecure-demo") -> None:
                 sid = result.get("session_id", "?")
                 _dispatch_log("info", f"[{i+1}/{len(to_dispatch)}] Success -> {sid}")
                 _dispatch["dispatched"] += 1
-                _cache["ts"] = 0  # invalidate cache
+                _cache["ts"] = 0  # force fresh data on next dashboard poll
             except Exception as e:
                 _dispatch_log("error", f"[{i+1}/{len(to_dispatch)}] Failed: {e}")
                 _dispatch["failed"] += 1
@@ -341,6 +341,7 @@ def build_dashboard_data() -> dict:
         level = "error" if "error" in tags else ("warning" if "warning" in tags else "note")
         cwe_ids = [t for t in tags if t.startswith("CWE-")]
 
+        # Priority: structured_output > API error > human-in-the-loop
         so_status = so.get("status", "in_progress")
         if so_status == "completed":
             display_status = "completed"
@@ -414,7 +415,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 initial = json.dumps(build_dashboard_data())
             except Exception:
                 initial = "null"
-            html = html.replace("INJECT_DATA_HERE", initial)
+            html = html.replace("INJECT_DATA_HERE", initial)  # SSR: avoids initial fetch flicker
             body = html.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -426,6 +427,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         # Session control: /api/session/<id>/terminate or /api/session/<id>/archive
+        # Hex-only: rejects non-Devin session IDs at routing layer
         session_match = re.match(r"^/api/session/([a-f0-9]+)/(terminate|archive)$", self.path)
 
         if self.path == "/api/dispatch":
@@ -463,7 +465,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:
         try:
             msg = str(args[0]) if args else ""
-            if "/api/" not in msg:
+            if "/api/" not in msg:  # suppress noisy poll requests
                 super().log_message(format, *args)
         except Exception:
             pass

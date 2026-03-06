@@ -60,19 +60,19 @@ async def poll_sessions(
             so = result.structured_output or {}
 
             if result.status_detail == "finished":
-                # Devin finished — check for PR or structured output
+                # PR or structured "completed" both count as success
                 if tracked.pr_url or so.get("status") == "completed":
                     tracked.status = "completed"
                 elif so.get("status") == "needs_human_review":
                     tracked.status = "needs_human_review"
                 else:
-                    tracked.status = "completed"
+                    tracked.status = "completed"  # finished without PR is still a success
             elif result.status_detail == "waiting_for_user":
                 tracked.status = "needs_human_review"
             elif result.status == "error":
                 tracked.status = "failed"
             elif result.status == "suspended":
-                # suspended for other reasons (inactivity, usage limit, etc.)
+                # Inactivity/usage_limit — treat as review, not failure
                 tracked.status = "needs_human_review"
             else:
                 tracked.status = "failed"
@@ -86,7 +86,7 @@ async def poll_sessions(
 
         if pending:
             await asyncio.sleep(interval)
-            interval = min(interval * 2, max_interval)
+            interval = min(interval * 2, max_interval)  # exponential backoff per round
 
 
 def generate_report(sessions: list[TrackedSession]) -> dict:
@@ -95,7 +95,7 @@ def generate_report(sessions: list[TrackedSession]) -> dict:
     findings_out = []
 
     for s in sessions:
-        elapsed = (s.finished_at or time.time()) - s.started_at
+        elapsed = (s.finished_at or time.time()) - s.started_at  # still-running sessions use wall clock
         for f in s.group.findings:
             findings_out.append({
                 "finding_id": f.finding_id,

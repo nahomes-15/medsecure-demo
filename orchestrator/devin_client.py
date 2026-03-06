@@ -80,7 +80,7 @@ class DevinClient:
             "title": title,
             "tags": tags,
             "repos": [repo],
-            "idempotent": True,
+            "idempotent": True,  # safe to retry — Devin dedupes by prompt
             "structured_output_schema": STRUCTURED_OUTPUT_SCHEMA,
             "max_acu_limit": 3,
         }
@@ -91,6 +91,7 @@ class DevinClient:
                     self.base_url, json=body, headers=self.headers,
                 )
                 if resp.status_code == 429:
+                    # Prefer server's Retry-After over our backoff
                     retry_after = float(resp.headers.get("Retry-After", backoff))
                     wait = max(retry_after, backoff)
                     logger.warning(
@@ -98,7 +99,7 @@ class DevinClient:
                         f"retrying in {wait:.1f}s..."
                     )
                     await asyncio.sleep(wait)
-                    backoff = min(backoff * 2, 60)
+                    backoff = min(backoff * 2, 60)  # cap at 60s even if retries pile up
                     continue
                 resp.raise_for_status()
                 data = resp.json()
@@ -169,7 +170,7 @@ class MockDevinClient:
         session = self._sessions[session_id]
         elapsed = time.time() - session["created_at"]
 
-        # Simulate work: takes 3-8 seconds in mock mode
+        # Elapsed-based gate simulates async work without threads
         work_time = random.uniform(3, 8)
         if elapsed < work_time:
             return SessionResult(
@@ -190,6 +191,7 @@ class MockDevinClient:
         return SessionResult(
             session_id=session_id,
             url=f"https://app.devin.ai/sessions/{session_id}",
+            # Mirror real v3: exit+finished vs suspended+waiting_for_user
             status="exit" if outcome == "completed" else "suspended",
             status_detail="finished" if outcome == "completed" else "waiting_for_user",
             structured_output={"status": outcome, "pr_url": pr_urls[0] if pr_urls else None},

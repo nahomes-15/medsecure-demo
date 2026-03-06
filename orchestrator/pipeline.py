@@ -87,8 +87,8 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     logger.info(f"Dispatching {len(dispatches)} sessions ({args.mode} mode)...")
     start = time.time()
 
-    sessions: list[TrackedSession] = []
-    dispatch_delay = 1.5  # seconds between dispatches to avoid rate limits
+    sessions: list[TrackedSession] = []  # survives partial failures
+    dispatch_delay = 1.5  # Devin 429s at ~1 req/s
     for i, d in enumerate(dispatches):
         g = d["group"]
         if i > 0:
@@ -108,12 +108,13 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             ))
             logger.info(f"    [{i+1}/{len(dispatches)}] Dispatched -> {result.session_id}")
         except Exception as e:
+            # Non-fatal: one bad group shouldn't abort the batch
             logger.error(
                 f"    [{i+1}/{len(dispatches)}] Dispatch failed for "
                 f"{g.rule_id} in {g.file}: {e} — continuing with remaining groups"
             )
 
-    # Step 5: Poll & track
+    # Step 5: Poll & track (blocks until all terminal)
     logger.info(f"Polling {len(sessions)} sessions...")
     await poll_sessions(client, sessions)
     elapsed = time.time() - start

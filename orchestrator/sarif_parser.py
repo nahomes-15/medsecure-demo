@@ -70,12 +70,12 @@ class FindingGroup:
 def _build_rule_index(run: dict) -> dict[str, dict]:
     """Build a lookup from (toolComponent index, rule index) -> rule definition."""
     rules = {}
+    # keyed by (component, index) — extensions vs driver are separate namespaces
     for ext_idx, ext in enumerate(run["tool"].get("extensions", [])):
         for rule_idx, rule in enumerate(ext.get("rules", [])):
             rules[(ext_idx, rule_idx)] = rule
-    # Also check driver rules
     for rule_idx, rule in enumerate(run["tool"]["driver"].get("rules", [])):
-        rules[("driver", rule_idx)] = rule
+        rules[("driver", rule_idx)] = rule  # sentinel key — driver has no numeric index
     return rules
 
 
@@ -99,7 +99,7 @@ def _extract_cwes(tags: list[str]) -> list[str]:
     for tag in tags:
         m = re.match(r"external/cwe/cwe-(\d+)", tag)
         if m:
-            cwes.append(f"CWE-{int(m.group(1))}")
+            cwes.append(f"CWE-{int(m.group(1))}")  # int() strips leading zeros (cwe-089 -> CWE-89)
     return cwes
 
 
@@ -157,7 +157,7 @@ def parse_sarif(sarif_path: str | Path) -> list[Finding]:
             end_line=region.get("endLine"),
             start_column=region.get("startColumn", 0),
             end_column=region.get("endColumn"),
-            level=default_cfg.get("level", "warning"),
+            level=default_cfg.get("level", "warning"),  # SARIF spec: "warning" if unspecified
             precision=props.get("precision", "unknown"),
             security_severity=props.get("security-severity", ""),
             problem_severity=props.get("problem.severity", ""),
@@ -183,7 +183,7 @@ def group_findings(findings: list[Finding]) -> list[FindingGroup]:
         FindingGroup(rule_id=k[0], file=k[1], findings=v)
         for k, v in groups.items()
     ]
-    result.sort(key=lambda g: SEVERITY_ORDER.get(g.level, 99))
+    result.sort(key=lambda g: SEVERITY_ORDER.get(g.level, 99))  # unknown levels sort last
     return result
 
 
